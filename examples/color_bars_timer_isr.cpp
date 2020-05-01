@@ -22,7 +22,7 @@ void setup() {
   display.clear();
   drawColorBars();
   timer1_attachInterrupt([](){ display.loop(); }); // Add ISR Function
-	timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
+  timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
   timer1_write(5*100); // 5 ticks per µs, one line drawn every 100µs
 }
 
