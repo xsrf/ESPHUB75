@@ -135,8 +135,9 @@ class ESP8266Matrix : public Adafruit_GFX {
         volatile uint32_t _lastFPSExecuted = 0;
         void selectMux(uint8_t row);
         void setLatch(boolean on);
-        void fastSPIblock(uint8_t *buf, uint16_t len);
-        void fastSPInoblock(uint8_t *buf, uint16_t len);
+        void SPIblock(uint8_t *data, uint16_t size);
+        void SPInoblock(uint8_t *data, uint16_t size);
+        void SPIwriteBytes(const uint8_t * data, uint8_t size);
 };
 
 ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
@@ -451,9 +452,8 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
         }
     }
 
-    // Now copy the framebuffer line into the SPI Buffer
-    //yield(); // let ESP do stuff
-    fastSPInoblock(_frameBufferDisplay + line*_fbs_line + _colorDepthIdx*_fbs_depth, _fbs_line);
+    // Now send the framebuffer line via SPI
+    SPInoblock(_frameBufferDisplay + line*_fbs_line + _colorDepthIdx*_fbs_depth, _fbs_line);
 
     // When we've sent the data for the last line to the display, we are ready for vsync
     if(lineIdx == _fb_lines-1 && _colorDepthIdx == _colorDepth-1 ) {
@@ -464,38 +464,42 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
 
 }
 
-inline void ESP8266Matrix::fastSPIblock(uint8_t *buf, uint16_t len) {
-    while (SPI1CMD & SPIBUSY);
-	SPI1U1 &= ~(SPIMMOSI << SPILMOSI); // Clear MOSI length
-	SPI1U1 |= ((4 * 8 - 1) << SPILMOSI); // Set MOSI length
-    while (len >= 4) {
-        SPI1W0 = *(uint32_t *)buf;
-        SPI1CMD |= SPIBUSY;
-        buf += 4;
-        len -= 4;
-        while (SPI1CMD & SPIBUSY);
-    }
-	SPI1U1 &= ~(SPIMMOSI << SPILMOSI); // Clear MOSI length
-	SPI1U1 |= ((1 * 8 - 1) << SPILMOSI); // Set MOSI length
-    while (len > 0) {
-        SPI1W0 = *(uint8_t *)buf;
-        SPI1CMD |= SPIBUSY;
-        buf += 1;
-        len -= 1;
-        while (SPI1CMD & SPIBUSY);
+inline void ESP8266Matrix::SPIblock(uint8_t *data, uint16_t size) {
+    SPInoblock(data, size);
+    while(SPI1CMD & SPIBUSY);
+}
+
+inline void ESP8266Matrix::SPInoblock(uint8_t *data, uint16_t size) {
+    // See SPIClass::writeBytes
+    while(size) {
+        if(size > 64) {
+            SPIwriteBytes(data, 64);
+            size -= 64;
+            data += 64;
+        } else {
+            SPIwriteBytes(data, size);
+            size = 0;
+        }
     }
 }
 
-inline void ESP8266Matrix::fastSPInoblock(uint8_t *buf, uint16_t len) {
-    if(len > 64) len = 64; // Only 64 supported by SPI Buffer
-	SPI1U1 &= ~(SPIMMOSI << SPILMOSI); // Clear MOSI length
-	SPI1U1 |= ((len * 8 - 1) << SPILMOSI); // Set MOSI length
-    volatile uint32_t *spiPtr = &SPI1W0;
-    for(uint8_t _b = 0; _b < (len+3)/4; _b++) {
-        spiPtr[_b] = 0; // Clear SPI buffer
+inline void ESP8266Matrix::SPIwriteBytes(const uint8_t * data, uint8_t size) {
+    while(SPI1CMD & SPIBUSY);
+    // Set Bits to transfer
+    const uint32_t bits = (size * 8) - 1;
+    const uint32_t mask = ~(SPIMMOSI << SPILMOSI);
+    SPI1U1 = ((SPI1U1 & mask) | (bits << SPILMOSI));
+
+    uint32_t * fifoPtr = (uint32_t*)&SPI1W0;
+    const uint32_t * dataPtr = (uint32_t*) data;
+    uint32_t dataSize = ((size + 3) / 4);
+
+    while(dataSize--) {
+        *fifoPtr = *dataPtr;
+        dataPtr++;
+        fifoPtr++;
     }
-    for(uint8_t _b = 0; _b < len; _b++) {
-        spiPtr[_b>>2] |= ( buf[_b] << ((_b&3)<<3));
-    }
+
+    __sync_synchronize();
     SPI1CMD |= SPIBUSY;
 }
