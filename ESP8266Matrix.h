@@ -211,7 +211,7 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     if(_PIN_E != 0xFF) pinMode(_PIN_E, OUTPUT);
     if(_PIN_LATCH != 0xFF) pinMode(_PIN_LATCH, OUTPUT);
 
-	Serial1.begin(250000); // Baudrate is not relevant, will be modified using U1D later
+    pinMode(2, SPECIAL); // Set GPIO2 as UART1 TX
 	U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
     U1C0 |= 1 << UCLBE; // enable loobback mode so RX mirrors TX
 
