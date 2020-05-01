@@ -132,8 +132,6 @@ class ESP8266Matrix : public Adafruit_GFX {
         uint16_t _gpio15_mux_mask;
         uint16_t _gpio16_mux_mask;
         uint8_t _mux_pins[5];
-        volatile uint32_t _lastPulseStart = 0;
-        volatile uint32_t _lastPulseDuration = 0;
         volatile uint32_t _lastFPSExecuted = 0;
         void selectMux(uint8_t row);
         void setLatch(boolean on);
@@ -215,6 +213,7 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
 
 	Serial1.begin(250000); // Baudrate is not relevant, will be modified using U1D later
 	U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
+    U1C0 |= 1 << UCLBE; // enable loobback mode so RX mirrors TX
 
     // Init IO Mux Lookup Tables
     for(uint8_t i = 0 ; i<32; i++) _gpio15_mux[i] = 0;
@@ -343,7 +342,7 @@ inline void ESP8266Matrix::selectMux(uint8_t row) {
 
 inline boolean ESP8266Matrix::isBusy() {
     if((SPI1CMD & SPIBUSY)) return true; // SPI still sending
-    if((micros() - _lastPulseStart) <= _lastPulseDuration ) return true; // OE Pulse not finished
+    if(!(U1S & (1<<USRXD))) return true; // UART1 still sending
     return false;
 }
 
@@ -422,7 +421,6 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
     setLatch(false);
 
     U1D = 10*_BitDurations[_colorDepthIdx];
-    _lastPulseDuration = _BitDurations[_colorDepthIdx];
 
     // get next line
     lineIdx++;
@@ -435,7 +433,6 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
 
     // Enable the LEDs, enough time went by for Latch/Mux... if not, put it at the END
   	U1F = 0x80; // LED Pulse
-    _lastPulseStart = micros();
 
 
     // When we're about to send the first line to the display, we swap buffer if requested
