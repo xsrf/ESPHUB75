@@ -41,7 +41,7 @@
     We only send one Line per execution. This means this function has to
     be executed several times to display a complete frame.
 
-    If the line buffer exceeds 64 bytes (170 RGB pixels), e.g. on 64px 
+    If the line buffer exceeds 64 bytes (170 RGB pixels), e.g. on 64px
     wide panels that drive 4 lines per buffer, we have to execute the
     function twice per line. (NOT IMPLEMENTED YET!)
 
@@ -151,7 +151,7 @@ ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t 
     // B : Mux B Pin, usually IO04 / D2 for 1/4 and above
     // C : Mux C Pin, usually IO15 / D8 for 1/8 and above
     // D : Mux D Pin, usually IO12 / D6 for 1/16 and above
-    // E : Mux E Pin, usually IO00 / D3 for 1/32 
+    // E : Mux E Pin, usually IO00 / D3 for 1/32
     // OE : OE Pin CANNOT BE SET! It is hardwired to IO02 / D4!
     // DATA : DATA Pin CANNOT BE SET! It is hardwired to IO13 / D7!
     // CLK : CLK Pin CANNOT BE SET! It is hardwired to IO14 / D5!
@@ -200,10 +200,10 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     _frameBufferDraw = _frameBufferB;
     pinMode(_PIN_OE, OUTPUT);
     digitalWrite(_PIN_OE, HIGH);
-	SPI.begin();
-	SPI.setDataMode(SPI_MODE1);
-	SPI.setHwCs(false); // Disable CS on D8 / IO15 / CS / HSPI_CS
-	SPI.setFrequency(20e6);
+    SPI.begin();
+    SPI.setDataMode(SPI_MODE1);
+    SPI.setHwCs(false); // Disable CS on D8 / IO15 / CS / HSPI_CS
+    SPI.setFrequency(20e6);
 
     if(_PIN_A != 0xFF) pinMode(_PIN_A, OUTPUT);
     if(_PIN_B != 0xFF) pinMode(_PIN_B, OUTPUT);
@@ -213,7 +213,7 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     if(_PIN_LATCH != 0xFF) pinMode(_PIN_LATCH, OUTPUT);
 
     pinMode(2, SPECIAL); // Set GPIO2 as UART1 TX
-	U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
+    U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
     U1C0 |= 1 << UCLBE; // enable loobback mode so RX mirrors TX
 
     // Init IO Mux Lookup Tables
@@ -343,7 +343,7 @@ inline void ESP8266Matrix::selectMux(uint8_t row) {
 
 inline boolean ESP8266Matrix::isBusy() {
     if((SPI1CMD & SPIBUSY)) return true; // SPI still sending
-    if(!(U1S & (1<<USRXD))) return true; // UART1 still sending
+    if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
     return false;
 }
 
@@ -358,13 +358,13 @@ inline boolean ESP8266Matrix::readyForFPS(uint8_t fps) {
 }
 
 void ESP8266Matrix::setBusyModeBlock() {
-    // If you call loop() again before SPI transfer is done / LED Pulse finished, 
+    // If you call loop() again before SPI transfer is done / LED Pulse finished,
     // this mode will block loop() until it can run safely
     _blockIfBusy = true;
 }
 
 void ESP8266Matrix::setBusyModeSkip() {
-    // If you call loop() again before SPI transfer is done / LED Pulse finished, 
+    // If you call loop() again before SPI transfer is done / LED Pulse finished,
     // this mode will skip loop() and return until it can run safely again
     _blockIfBusy = false;
 }
@@ -404,7 +404,7 @@ void ESP8266Matrix::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
         _BitDurations[bit] = onTime / (1<<bit);
         if(_BitDurations[bit] == 0) _BitDurations[bit] = 1; // ensure minimum of 1
         bit++;
-    }    
+    }
 }
 
 ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
@@ -425,7 +425,7 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
 
     // get next line
     lineIdx++;
-    if(lineIdx >= _fb_lines) { 
+    if(lineIdx >= _fb_lines) {
         lineIdx = 0;
         _colorDepthIdx++;
         if(_colorDepthIdx >= _colorDepth) _colorDepthIdx = 0;
@@ -433,7 +433,7 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
     line = lineIdx;
 
     // Enable the LEDs, enough time went by for Latch/Mux... if not, put it at the END
-  	U1F = 0x80; // LED Pulse
+      U1F = 0x80; // LED Pulse
 
 
     // When we're about to send the first line to the display, we swap buffer if requested
