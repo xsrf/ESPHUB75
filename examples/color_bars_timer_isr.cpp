@@ -21,6 +21,7 @@ void setup() {
   display.setLEDPulseDuration(80); // 80µs LED on time for MSB
   display.clear();
   drawColorBars();
+  display.requestBufferSwap();
   timer1_attachInterrupt([](){ display.loop(); }); // Add ISR Function
   timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
   timer1_write(5*100); // 5 ticks per µs, one line drawn every 100µs
@@ -60,6 +61,7 @@ void drawMovingBox() {
 
 void loop() {
   if(display.readyForDrawing()) {
+    display.copyBuffer(); // Copy display buffer to drawing buffer, because our drawing functions relies on the buffer contents
     drawMovingBox();
     display.requestBufferSwap();
   }

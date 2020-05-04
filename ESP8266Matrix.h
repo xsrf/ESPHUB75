@@ -74,6 +74,7 @@
 #include "Adafruit_GFX.h"
 #include "Arduino.h"
 #include <SPI.h>
+#include "nbSPI.h"
 
 class ESP8266Matrix : public Adafruit_GFX {
     public:
@@ -87,9 +88,7 @@ class ESP8266Matrix : public Adafruit_GFX {
         boolean readyForDrawing();
         void setBusyModeBlock();
         void setBusyModeSkip();
-        void setDoubleBufferModeCopy();
-        void setDoubleBufferModeSwap();
-        void copyBuffer();
+        void copyBuffer(boolean reverse);
         void initBuffer();
         void clear();
         boolean isBusy();
@@ -99,7 +98,6 @@ class ESP8266Matrix : public Adafruit_GFX {
         boolean _doubleBuffer = false;
         boolean _initialized = false;
         boolean _constructed = false;
-        boolean _copyBuffer = true;
         boolean _blockIfBusy = false;
         volatile boolean _requestBufferSwap = false;
         volatile boolean _VSyncReady = false;
@@ -298,7 +296,7 @@ void ESP8266Matrix::initBuffer() {
     setCursor(_width/2+1,_height/2-4);
     print("B");
     if(_doubleBuffer) {
-        copyBuffer();
+        copyBuffer(true);
     }
     setTextColor(0xFFFF,0x0000);
     setCursor(_width/2-6,_height/2-4);
@@ -342,7 +340,7 @@ inline void ESP8266Matrix::selectMux(uint8_t row) {
 }
 
 inline boolean ESP8266Matrix::isBusy() {
-    if((SPI1CMD & SPIBUSY)) return true; // SPI still sending
+    if(nbSPI_busy()) return true; // SPI still sending
     if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
     return false;
 }
@@ -369,27 +367,17 @@ void ESP8266Matrix::setBusyModeSkip() {
     _blockIfBusy = false;
 }
 
-void ESP8266Matrix::setDoubleBufferModeCopy() {
-    // In this mode, the drawing buffer will be copied to the display buffer
-    // This is slower - it takes ~24µs for 48 Byte Buffer - but the user will
-    // always have a concistent framebuffer to work with
-    if(!_doubleBuffer) return;
-    _copyBuffer = true;
-}
-
-void ESP8266Matrix::setDoubleBufferModeSwap() {
-    // In this mode, the drawing buffer and the display buffer are exchanged
-    // This is faster, but the user will be presented a drawing buffer from the
-    // previous frame, which might be confusing
-    if(!_doubleBuffer) return;
-    _copyBuffer = false;
-}
-
-inline void ESP8266Matrix::copyBuffer() {
-    // This will copy the drawing buffer to the display buffer immediately
+inline void ESP8266Matrix::copyBuffer(boolean reverse = false) {
+    // This will copy the display buffer to the drawing buffer immediately (or inverse)
+    // Use this in your application before drawing, if you rely on the display buffer
+    // to stay the same after every frame
     if(!_initialized) return;
     if(!_doubleBuffer) return;
-    memcpy(_frameBufferDisplay,_frameBufferDraw,_fbs_memory);
+    if(reverse) {
+        memcpy(_frameBufferDisplay,_frameBufferDraw,_fbs_memory);
+    } else {
+        memcpy(_frameBufferDraw,_frameBufferDisplay,_fbs_memory);
+    }
 }
 
 void ESP8266Matrix::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
@@ -433,27 +421,23 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
     line = lineIdx;
 
     // Enable the LEDs, enough time went by for Latch/Mux... if not, put it at the END
-      U1F = 0x80; // LED Pulse
+    U1F = 0x80; // LED Pulse
 
 
     // When we're about to send the first line to the display, we swap buffer if requested
     if(_requestBufferSwap && (lineIdx == 0) && (_colorDepthIdx == 0) ) {
         _requestBufferSwap = false;
-        if(_copyBuffer) {
-            copyBuffer();
+        if(_frameBufferDisplay == _frameBufferA) {
+            _frameBufferDisplay = _frameBufferB;
+            _frameBufferDraw = _frameBufferA;
         } else {
-            if(_frameBufferDisplay == _frameBufferA) {
-                _frameBufferDisplay = _frameBufferB;
-                _frameBufferDraw = _frameBufferA;
-            } else {
-                _frameBufferDisplay = _frameBufferA;
-                _frameBufferDraw = _frameBufferB;
-            }
+            _frameBufferDisplay = _frameBufferA;
+            _frameBufferDraw = _frameBufferB;
         }
     }
 
     // Now send the framebuffer line via SPI
-    SPInoblock(_frameBufferDisplay + line*_fbs_line + _colorDepthIdx*_fbs_depth, _fbs_line);
+    nbSPI_writeBytes(_frameBufferDisplay + line*_fbs_line + _colorDepthIdx*_fbs_depth, _fbs_line);
 
     // When we've sent the data for the last line to the display, we are ready for vsync
     if(lineIdx == _fb_lines-1 && _colorDepthIdx == _colorDepth-1 ) {
