@@ -16,15 +16,21 @@ ESP8266Matrix display(64,32,2,3,P_LAT,P_A,P_B,P_C,P_D);
 
 void drawColorBars();
 
+// Execute ISR as often as possible to increase refresh rate
+// Executing this even if LEDs are still lit is fine, because it returns immediately in this case!
+ICACHE_RAM_ATTR void draw() {
+  display.loop(); 
+}
+
 void setup() {
   display.begin(5,true); // Select from 1-5 Bits color depth
-  display.setLEDPulseDuration(80); // 80µs LED on time for MSB
+  display.setLEDPulseDuration(100); // 100µs LED on time for MSB
   display.clear();
   drawColorBars();
   display.requestBufferSwap();
-  timer1_attachInterrupt([](){ display.loop(); }); // Add ISR Function
+  timer1_attachInterrupt(draw); // Add ISR Function
   timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
-  timer1_write(5*100); // 5 ticks per µs, one line drawn every 100µs
+  timer1_write(5*25); // 5 ticks per µs, execute every 25µs
 }
 
 void drawColorBars() {
