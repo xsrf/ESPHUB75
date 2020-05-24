@@ -202,7 +202,7 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     pinMode(_PIN_OE, OUTPUT);
     digitalWrite(_PIN_OE, HIGH);
     SPI.begin();
-    SPI.setDataMode(SPI_MODE1);
+    SPI.setDataMode(SPI_MODE0);
     SPI.setHwCs(false); // Disable CS on D8 / IO15 / CS / HSPI_CS
     SPI.setFrequency(20e6);
 
