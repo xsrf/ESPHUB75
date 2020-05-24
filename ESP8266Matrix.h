@@ -91,9 +91,12 @@ class ESP8266Matrix : public Adafruit_GFX {
         void copyBuffer(boolean reverse);
         void initBuffer();
         void clear();
+        void clearDisplay();
         boolean isBusy();
         boolean readyForFPS(uint8_t fps);
         void setLEDPulseDuration(uint8_t onTime, uint8_t bit);
+        uint16_t color565(uint8_t r, uint8_t g, uint8_t b);
+        void drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b);
     private:
         boolean _doubleBuffer = false;
         boolean _initialized = false;
@@ -275,6 +278,18 @@ void ESP8266Matrix::drawPixel(int16_t x, int16_t y, uint16_t color) {
     }
 }
 
+void ESP8266Matrix::drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b) {
+    drawPixel(x,y,color565(r,g,b));
+}
+
+uint16_t ESP8266Matrix::color565(uint8_t r, uint8_t g, uint8_t b) {
+    uint16_t col16 = 0;
+    col16 |= (r>>3)<<11;
+    col16 |= (g>>2)<<5;
+    col16 |= (b>>3);
+    return col16;
+}
+
 void ESP8266Matrix::initBuffer() {
     // Put arrows in each corner and label Buffers A/B
     // You can remove this stuff using clear()
@@ -306,6 +321,10 @@ void ESP8266Matrix::initBuffer() {
 void ESP8266Matrix::clear() {
     if(!_initialized) return;
     memset(_frameBufferDraw,0,_fbs_memory);
+}
+
+void ESP8266Matrix::clearDisplay() {
+    clear();
 }
 
 void ESP8266Matrix::requestBufferSwap() {
@@ -340,7 +359,7 @@ inline void ESP8266Matrix::selectMux(uint8_t row) {
 }
 
 inline boolean ESP8266Matrix::isBusy() {
-    if(nbSPI_busy()) return true; // SPI still sending
+    if(nbSPI_isBusy()) return true; // SPI still sending
     if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
     return false;
 }
