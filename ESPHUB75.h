@@ -97,12 +97,28 @@
     #include <esp32-hal-uart.c>
     #define _GPOS(val) GPIO.out_w1ts = val
     #define _GPOC(val) GPIO.out_w1tc = val
+    #define ESPHUB75_LAT 22
+    #define ESPHUB75_A 19
+    #define ESPHUB75_B 23
+    #define ESPHUB75_C 18
+    #define ESPHUB75_D 5
+    #define ESPHUB75_E 15
 #endif
 
 #ifdef ESP8266
     #define _GPOS(val) GPOS = val; GP16O |= ((val >> 16) & 1)
     #define _GPOC(val) GPOC = val; GP16O &= ~((val >> 16) & 1)
+    #define ESPHUB75_LAT 16
+    #define ESPHUB75_A 5
+    #define ESPHUB75_B 4
+    #define ESPHUB75_C 15
+    #define ESPHUB75_D 12
+    #define ESPHUB75_E 0
 #endif
+
+#define ESPHUB75_OE 2
+#define ESPHUB75_CLK 14
+#define ESPHUB75_DAT 13
 
 class ESPHUB75 : public Adafruit_GFX {
     public:
@@ -122,9 +138,11 @@ class ESPHUB75 : public Adafruit_GFX {
         void clearDisplay();
         bool isBusy();
         bool readyForFPS(uint8_t fps);
-        void setLEDPulseDuration(uint8_t onTime, uint8_t bit);
+        void setLEDPulseDuration(uint16_t onTime, uint8_t bit);
         uint16_t color565(uint8_t r, uint8_t g, uint8_t b);
         void drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b);
+        void enableTimer(uint16_t interval);
+        void disableTimer();
     private:
         bool _doubleBuffer = false;
         bool _initialized = false;
@@ -155,7 +173,7 @@ class ESPHUB75 : public Adafruit_GFX {
         uint8_t _PIN_OE = 2; // UART1 TX, cannot change on ESP8266
         uint8_t _PIN_CLK = 14; // SPI Clock PIN, cannot change on ESP8266
         uint8_t _PIN_DAT = 13; // SPI Data PIN, cannot change on ESP8266
-        uint8_t _BitDurations[8] = {40,20,10,5,2,1,1,1}; // use setLEDPulseDuration()
+        uint16_t _BitDurations[8] = {40,20,10,5,2,1,1,1}; // use setLEDPulseDuration()
         uint32_t _gpio_latch;
         uint32_t _gpio_mux[32]; // we support 5 mux channels; 2^5=32 options
         uint32_t _gpio_mux_mask;
@@ -168,9 +186,26 @@ class ESPHUB75 : public Adafruit_GFX {
         void _initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data);
         void _initStrobe(uint8_t pin_oe);
         void strobe(uint16_t length_us);
+        static void _timer_isr();
+        #ifdef ESP32
+        hw_timer_t * _timer;
+        #endif
 };
 
-ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
+static ESPHUB75 *_esphub75_global_self;
+#ifdef ESP32
+portMUX_TYPE _esphub75_global_timerMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
+
+#define ESPHUB75_COLOR_RGB 3
+#define ESPHUB75_COLOR_MONO 1
+#define ESPHUB75_SCAN_2 2
+#define ESPHUB75_SCAN_4 4
+#define ESPHUB75_SCAN_8 8
+#define ESPHUB75_SCAN_16 16
+#define ESPHUB75_SCAN_32 32
+
+ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t scanRows, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
     // Here we set all electrical/physical definitions, since these values should never change:
     // panelWidth = How many LEDs/Pixels does a row (where LEDs are lit at once during multiplexing) have?
     // panelHeight = How many rows does the panel have?
@@ -197,7 +232,7 @@ ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux
     _mux_pins[2] = C;
     _mux_pins[3] = D;
     _mux_pins[4] = E;
-    _rowsPerMux = rowsPerMux;
+    _rowsPerMux = panelHeight/scanRows;
     _colorChannels = colorChannels;
     _width = panelWidth;
     _height = panelHeight;
@@ -407,7 +442,7 @@ inline void ESPHUB75::copyBuffer(bool reverse = false) {
     }
 }
 
-void ESPHUB75::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
+void ESPHUB75::setLEDPulseDuration(uint16_t onTime, uint8_t bit = 0) {
     // This will set the On-Time for the LEDs for the MSB and half it
     // for all less significant bits if using colorDepth.
     // You can set the length for each bit individually if you call
@@ -510,4 +545,39 @@ inline void ESPHUB75::strobe(uint16_t length_us) {
         U1D = 10*length_us; // Pulse length
         U1F = 0x80; // Pulse
     #endif 
+}
+
+ICACHE_RAM_ATTR void ESPHUB75::_timer_isr() {
+    #ifdef ESP32
+    portENTER_CRITICAL_ISR(&_esphub75_global_timerMux);
+    _esphub75_global_self->loop();
+    portEXIT_CRITICAL_ISR(&_esphub75_global_timerMux);
+    #endif
+    #ifdef ESP8266
+    _esphub75_global_self->loop();
+    #endif
+}
+
+void ESPHUB75::enableTimer(uint16_t interval = 40) {
+    _esphub75_global_self = this;
+    #ifdef ESP8266
+        timer1_attachInterrupt(_timer_isr); // Add ISR Function
+        timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
+        timer1_write(5*interval); // 5 ticks per µs, execute every 25µs
+    #endif
+    #ifdef ESP32
+        _timer = timerBegin(0, 80, true);
+        timerAttachInterrupt(_timer, &_timer_isr, true);
+        timerAlarmWrite(_timer, interval, true);
+        timerAlarmEnable(_timer);
+    #endif
+}
+
+void ESPHUB75::disableTimer() {
+    #ifdef ESP8266
+        timer1_disable();
+    #endif
+    #ifdef ESP32
+        timerDetachInterrupt(_timer);
+    #endif
 }
