@@ -5,35 +5,35 @@
 
     This Library is designed to drive Shift-Register based multiplexing
     LED Matrix panles with as little CPU load as possible by using
-    hardware peripherials of the ESP8266 (only at the moment).
+    hardware peripherials of the ESP8266 and ESP32.
 
-    The UART0 hardware is used to generate an acurate pulse for
+    The UART1 hardware is used to generate an acurate pulse for
     OE / enabling the LEDs.
-    This means that OE MUST be connected to D4 / IO02.
+    This means that OE MUST be connected to D4 (WeMos) / IO_02 on
+    the ESP8266.
 
     Data transfer is handled by SPI1 hardware, but we're not using the
-    official SPI lib, because it only uses one Byte of the hardware
-    SPI buffer and is also blocking while sending data.
-    The hardware SPI1 buffer is is actually 16 Words / 64 Bytes big.
-    We'll copy the data into the registers SPI1W0 to SPI1W15 directly.
-    This allows us to send 64 Bytes of data without blocking the CPU.
-    At the moment, 64 Bytes is the maximum, so this limits the panels
-    supported. 64 bytes is enough for RGB Panels where 170 Pixels are
-    lit at once, e.g. 64x32 with 1/16, 64x64 with 1/32, 32x32 ...
-    64x64 with 1/16 won't work, because 256 Pixels are lit at once!
-
+    official Arduino SPI lib, because it only has blocking functions.
+    On the ESP8266 we use the full 64 bytes hardware buffer to send
+    64 bytes of data at once without blocking. Interrups are used to
+    queue up additional data when the buffer was sent, allowing us to
+    send unlimited data without blocking but only short ISR code every
+    64 bytes.    
+    On the ESP32 DMA is used for SPI transfer. This has a slightly
+    longer setup time, but allows sending unlimited data with only
+    one call and no additional ISRs.
+    
     Timing sequence:
     The main function that actually controls the matrix is following
-    this main sequence:
+    this sequence:
     1) We assume data for physical line X of the display is in the
        shift registers.
     2) We select line X with mux pins A-E
     3) We latch data from the shift registers to their outputs
-    4) We copy the Data for line X+1 into the SPI1 Buffer
-    5) We init SPI1 data transfer (non blocking)
-    6) We tell UART0 to generate an OE pulse (non blocking)
+    4) We tell UART1 to generate an OE pulse (non blocking)
+    5) We send the Data for line X+1 via SPI (non blocking)
     That's it. The only CPU intensive operation is actually filling the
-    SPI1 buffer.
+    SPI1 buffer on the ESP8266 / preparing DMA on ESP32.
     There are no delays needed at all and no blocking operations.
     SPI transfer and LED pulse are handled by hardware after the
     function executed, leaving the CPU to to other stuff.
@@ -41,12 +41,13 @@
     We only send one Line per execution. This means this function has to
     be executed several times to display a complete frame.
 
-    If the line buffer exceeds 64 bytes (170 RGB pixels), e.g. on 64px
-    wide panels that drive 4 lines per buffer, we have to execute the
-    function twice per line. (NOT IMPLEMENTED YET!)
-
     The code was meant to be triggered by a timer ISR to maintain a constant
     refresh rate. But it may also be called within a main loop.
+
+    The main function will return without doing anything if SPI transfer
+    from the previous call is still not finished or the LEDs are still enabled.
+    This allows the Timer ISR to call it more often than always needed to adapt
+    for shorter runs.
 
     Memory layout:
     Since we have to send data to the matrix panel way more often than
@@ -69,12 +70,40 @@
     Other panels may require different memory layout. This is all handled
     by drawPixel();
 
+    Standard Wiring:
+    
+    HUB75     | ESP8266 | ESP32 | WeMos D1 Mini R2 | ESP Function
+    ----------|---------|-------|------------------|-------------
+    R0 / DIN  | 13*     | 13    | D7*              | HSPI Data
+    SCK / CLK | 14*     | 14    | D5*              | HSPI Clock
+    OE        | 2*      | 2     | D4*              | UART1 TX
+    LAT / STB | 16      | 22    | D0               | 
+    A         | 5       | 19    | D1               | 
+    B         | 4       | 23    | D2               | 
+    C         | 15      | 18    | D8               | 
+    D         | 12      | 5     | D6               | 
+    E         | 0       | 15    | D3               | 
+
+    *) PIN cannot be changed due to hardware limitations of the ESP8266
+
 */
 
-#include "Adafruit_GFX.h"
-#include "Arduino.h"
+#include <Arduino.h>
 #include <SPI.h>
 #include "nbSPI.h"
+#include "Adafruit_GFX.h"
+
+#ifdef ESP32
+    #include <soc/uart_reg.h>
+    #include <esp32-hal-uart.c>
+    #define _GPOS(val) GPIO.out_w1ts = val
+    #define _GPOC(val) GPIO.out_w1tc = val
+#endif
+
+#ifdef ESP8266
+    #define _GPOS(val) GPOS = val; GP16O |= ((val >> 16) & 1)
+    #define _GPOC(val) GPOC = val; GP16O &= ~((val >> 16) & 1)
+#endif
 
 class ESP8266Matrix : public Adafruit_GFX {
     public:
@@ -124,21 +153,22 @@ class ESP8266Matrix : public Adafruit_GFX {
         uint8_t _PIN_C;
         uint8_t _PIN_D;
         uint8_t _PIN_E;
-        const uint8_t _PIN_OE = 2; // Cannot change, this is hardwired to UART1
+        uint8_t _PIN_OE = 2; // UART1 TX, cannot change on ESP8266
+        uint8_t _PIN_CLK = 14; // SPI Clock PIN, cannot change on ESP8266
+        uint8_t _PIN_DAT = 13; // SPI Data PIN, cannot change on ESP8266
         uint8_t _BitDurations[8] = {40,20,10,5,2,1,1,1}; // use setLEDPulseDuration()
-        uint16_t _gpio15_latch;
-        uint16_t _gpio16_latch;
-        uint16_t _gpio15_mux[32]; // we support 5 mux channels; 2^5=32 options
-        uint16_t _gpio16_mux[32]; // we support 5 mux channels; 2^5=32 options
-        uint16_t _gpio15_mux_mask;
-        uint16_t _gpio16_mux_mask;
+        uint32_t _gpio_latch;
+        uint32_t _gpio_mux[32]; // we support 5 mux channels; 2^5=32 options
+        uint32_t _gpio_mux_mask;
         uint8_t _mux_pins[5];
+        uint8_t _spi_mode = SPI_MODE0;
+        uint32_t _spi_freq = 20e6;
         volatile uint32_t _lastFPSExecuted = 0;
         void selectMux(uint8_t row);
         void setLatch(boolean on);
-        void SPIblock(uint8_t *data, uint16_t size);
-        void SPInoblock(uint8_t *data, uint16_t size);
-        void SPIwriteBytes(const uint8_t * data, uint8_t size);
+        void _initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data);
+        void _initStrobe(uint8_t pin_oe);
+        void strobe(uint16_t length_us);
 };
 
 ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
@@ -199,12 +229,9 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     }
     _frameBufferDisplay = _frameBufferA;
     _frameBufferDraw = _frameBufferB;
-    pinMode(_PIN_OE, OUTPUT);
-    digitalWrite(_PIN_OE, HIGH);
-    SPI.begin();
-    SPI.setDataMode(SPI_MODE0);
-    SPI.setHwCs(false); // Disable CS on D8 / IO15 / CS / HSPI_CS
-    SPI.setFrequency(20e6);
+
+    _initSPI(_spi_freq, _spi_mode, _PIN_CLK, _PIN_DAT);
+    _initStrobe(_PIN_OE);
 
     if(_PIN_A != 0xFF) pinMode(_PIN_A, OUTPUT);
     if(_PIN_B != 0xFF) pinMode(_PIN_B, OUTPUT);
@@ -213,32 +240,13 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) 
     if(_PIN_E != 0xFF) pinMode(_PIN_E, OUTPUT);
     if(_PIN_LATCH != 0xFF) pinMode(_PIN_LATCH, OUTPUT);
 
-    pinMode(2, SPECIAL); // Set GPIO2 as UART1 TX
-    U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
-    U1C0 |= 1 << UCLBE; // enable loobback mode so RX mirrors TX
-
     // Init IO Mux Lookup Tables
-    for(uint8_t i = 0 ; i<32; i++) _gpio15_mux[i] = 0;
-    for(uint8_t i = 0 ; i<32; i++) _gpio16_mux[i] = 0;
-    if(_PIN_LATCH == 16) {
-        _gpio15_latch = 0;
-        _gpio16_latch = 1;
-    }
-    if(_PIN_LATCH < 16) {
-        _gpio15_latch = (1 << _PIN_LATCH);
-        _gpio16_latch = 0;
-    }
+    for(uint8_t i = 0 ; i<32; i++) _gpio_mux[i] = 0;
+    _gpio_latch = (1 << _PIN_LATCH);
     for(uint8_t p=0; p<5; p++) {
-        if(_mux_pins[p] == 16) {
-            for(uint8_t i = 0 ; i<32; i++) _gpio16_mux[i] |= (1 & ( i >> p ));
-        }
-        if(_mux_pins[p] < 16) {
-            for(uint8_t i = 0 ; i<32; i++) _gpio15_mux[i] |= ( (1 & ( i >> p)) << _mux_pins[p] );
-        }
+        for(uint8_t i = 0 ; i<32; i++) _gpio_mux[i] |= ( (1 & ( i >> p)) << _mux_pins[p] );
     }
-    for(uint8_t i = 0 ; i<32; i++) _gpio15_mux_mask |= _gpio15_mux[i];
-    for(uint8_t i = 0 ; i<32; i++) _gpio16_mux_mask |= _gpio16_mux[i];
-
+    for(uint8_t i = 0 ; i<32; i++) _gpio_mux_mask |= _gpio_mux[i];
 
     initBuffer();
     setLEDPulseDuration(40,0);
@@ -341,26 +349,27 @@ boolean ESP8266Matrix::readyForDrawing() {
 
 inline void ESP8266Matrix::setLatch(boolean on) {
     if(on) {
-        GPOS = _gpio15_latch;
-        GP16O |= _gpio16_latch;
+        _GPOS(_gpio_latch);
     } else {
-        GPOC = _gpio15_latch;
-        GP16O &= ~_gpio16_latch;
+        _GPOC(_gpio_latch);
     }
 }
 
 inline void ESP8266Matrix::selectMux(uint8_t row) {
     // clear all mux pins
-    GPOC = _gpio15_mux_mask;
-    GP16O &= ~_gpio16_mux_mask;
+    _GPOC(_gpio_mux_mask);
     // set mux pins
-    GPOS = _gpio15_mux[row];
-    GP16O |= _gpio16_mux[row];
+    _GPOS(_gpio_mux[row]);
 }
 
 inline boolean ESP8266Matrix::isBusy() {
     if(nbSPI_isBusy()) return true; // SPI still sending
-    if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
+    #ifdef ESP8266
+        if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
+    #endif
+    #ifdef ESP32
+        if(!(READ_PERI_REG(UART_STATUS_REG(1)) & UART_TXD)) return true; // UART1 TX still low / LEDs on
+    #endif
     return false;
 }
 
@@ -428,7 +437,8 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
     selectMux(line);
     setLatch(false);
 
-    U1D = 10*_BitDurations[_colorDepthIdx];
+    // Enable the LEDs, enough time went by for Latch/Mux... if not, put it at the END
+    strobe(_BitDurations[_colorDepthIdx]);
 
     // get next line
     lineIdx++;
@@ -438,10 +448,6 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
         if(_colorDepthIdx >= _colorDepth) _colorDepthIdx = 0;
     }
     line = lineIdx;
-
-    // Enable the LEDs, enough time went by for Latch/Mux... if not, put it at the END
-    U1F = 0x80; // LED Pulse
-
 
     // When we're about to send the first line to the display, we swap buffer if requested
     if(_requestBufferSwap && (lineIdx == 0) && (_colorDepthIdx == 0) ) {
@@ -467,42 +473,42 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
 
 }
 
-inline void ESP8266Matrix::SPIblock(uint8_t *data, uint16_t size) {
-    SPInoblock(data, size);
-    while(SPI1CMD & SPIBUSY);
+void ESP8266Matrix::_initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data) {
+    #ifdef ESP32
+        nbSPI_init(freq, mode, pin_clk, pin_data);
+    #endif
+    #ifdef ESP8266
+        SPI.begin();
+        SPI.setDataMode(mode);
+        SPI.setHwCs(false); // Disable CS on D8 / IO15 / CS / HSPI_CS
+        SPI.setFrequency(freq);
+    #endif
 }
 
-inline void ESP8266Matrix::SPInoblock(uint8_t *data, uint16_t size) {
-    // See SPIClass::writeBytes
-    while(size) {
-        if(size > 64) {
-            SPIwriteBytes(data, 64);
-            size -= 64;
-            data += 64;
-        } else {
-            SPIwriteBytes(data, size);
-            size = 0;
-        }
-    }
+void ESP8266Matrix::_initStrobe(uint8_t pin_oe) {
+    #ifdef ESP32
+        DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_UART1_CLK_EN); // Enable UART1 Clock
+        DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_UART1_RST); // Enable UART1 Hardware
+        pinMode(pin_oe, OUTPUT);
+        pinMatrixOutAttach(pin_oe, UART_TXD_IDX(1), false, false); // UART_TXD_IDX(u) / U1TXD_OUT_IDX
+        WRITE_PERI_REG(UART_MEM_CONF_REG(1),  1 << UART_TX_SIZE_S); // Set TX Buffer to 1
+    #endif
+    #ifdef ESP8266
+        pinMode(2, SPECIAL); // Set GPIO2 as UART1 TX, pin cannot be changed
+        U1S |= 0x01 << USTXC; // Set UART1 TX FIFO length
+        U1C0 |= 1 << UCLBE; // enable loobback mode so RX mirrors TX
+    #endif 
 }
 
-inline void ESP8266Matrix::SPIwriteBytes(const uint8_t * data, uint8_t size) {
-    while(SPI1CMD & SPIBUSY);
-    // Set Bits to transfer
-    const uint32_t bits = (size * 8) - 1;
-    const uint32_t mask = ~(SPIMMOSI << SPILMOSI);
-    SPI1U1 = ((SPI1U1 & mask) | (bits << SPILMOSI));
-
-    uint32_t * fifoPtr = (uint32_t*)&SPI1W0;
-    const uint32_t * dataPtr = (uint32_t*) data;
-    uint32_t dataSize = ((size + 3) / 4);
-
-    while(dataSize--) {
-        *fifoPtr = *dataPtr;
-        dataPtr++;
-        fifoPtr++;
-    }
-
-    __sync_synchronize();
-    SPI1CMD |= SPIBUSY;
+inline void ESP8266Matrix::strobe(uint16_t length_us) {
+    #ifdef ESP32
+        WRITE_PERI_REG(UART_CLKDIV_REG(1), 10*length_us);
+        WRITE_PERI_REG(UART_FIFO_REG(1), 0x80);
+        CLEAR_PERI_REG_MASK( UART_IDLE_CONF_REG(1), UART_TX_BRK_NUM_M );
+        CLEAR_PERI_REG_MASK( UART_IDLE_CONF_REG(1), UART_TX_IDLE_NUM_M );
+    #endif 
+    #ifdef ESP8266
+        U1D = 10*length_us; // Pulse length
+        U1F = 0x80; // Pulse
+    #endif 
 }
