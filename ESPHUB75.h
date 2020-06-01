@@ -123,7 +123,7 @@
 class ESPHUB75 : public Adafruit_GFX {
     public:
         uint16_t getPixel(int16_t x, int16_t y);
-        ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
+        ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t scanRows, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
         void begin(uint8_t colorDepth, bool doubleBuffer, bool startTimer);
         void loop();
         void drawPixel(int16_t x, int16_t y, uint16_t color);
@@ -209,7 +209,7 @@ ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t scanRows, 
     // Here we set all electrical/physical definitions, since these values should never change:
     // panelWidth = How many LEDs/Pixels does a row (where LEDs are lit at once during multiplexing) have?
     // panelHeight = How many rows does the panel have?
-    // rowsPerMux = How many rows are lit at once when one mux channel is selected? For a 32x32 panel with 1/16 this is 2.
+    // scanRows = How many different rows can be selected on the panel? For a 32x32 panel with 1/16 scan this is 16.
     // colorChannels = how many primary colors does the panel have? For RGB this is 3, for monochrome ones this is 1.
     // LATCH : The LATCH Pin, usually IO16 / D0
     // A : Mux A Pin, usually IO05 / D1 for 1/2 and above

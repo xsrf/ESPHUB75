@@ -4,7 +4,7 @@
 #define WIDTH 128
 #define HEIGHT 32
 
-// Init Display: Width, Height, RowsPerMux, PrimaryColors, Pin Latch, Pins A-E
+// Init Display: Width, Height, ScanRows, PrimaryColors, Pin Latch, Pins A-E
 ESPHUB75 display(WIDTH, HEIGHT, ESPHUB75_SCAN_16, ESPHUB75_COLOR_RGB, ESPHUB75_LAT, ESPHUB75_A, ESPHUB75_B, ESPHUB75_C, ESPHUB75_D);
 
 
