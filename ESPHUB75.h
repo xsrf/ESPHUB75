@@ -124,7 +124,7 @@ class ESPHUB75 : public Adafruit_GFX {
     public:
         uint16_t getPixel(int16_t x, int16_t y);
         ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
-        void begin(uint8_t colorDepth, bool doubleBuffer);
+        void begin(uint8_t colorDepth, bool doubleBuffer, bool startTimer);
         void loop();
         void drawPixel(int16_t x, int16_t y, uint16_t color);
         void requestBufferSwap();
@@ -240,7 +240,7 @@ ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t scanRows, 
     if(_colorChannels > 4) _colorChannels = 3; // RGBW/RGBY might exist, but if higher we assume the user did something wrong...
 }
 
-void ESPHUB75::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
+void ESPHUB75::begin(uint8_t colorDepth = 3, bool doubleBuffer = true, bool startTimer = true) {
     // Here we set all values we need to construct the framebuffer(s) and create it
     // colorDepth : Bits of colorDepth per primary color! 3 results in 8 shades per primary color, thus 512 colors. Max is 5!
     if(!_constructed) return;
@@ -284,6 +284,7 @@ void ESPHUB75::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
 
     initBuffer();
     setLEDPulseDuration(40,0);
+    if(startTimer) enableTimer(40);
 }
 
 void ESPHUB75::drawPixel(int16_t x, int16_t y, uint16_t color) {

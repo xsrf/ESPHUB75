@@ -10,12 +10,11 @@ ESPHUB75 display(WIDTH, HEIGHT, ESPHUB75_SCAN_16, ESPHUB75_COLOR_RGB, ESPHUB75_L
 void drawColorBars();
 
 void setup() {
-  display.begin(5,true); // Select from 1-5 Bits color depth
+  display.begin(5); // Select from 1-5 Bits color depth
   display.setLEDPulseDuration(100); // 100µs LED on time for MSB
   display.clear();
   drawColorBars();
   display.requestBufferSwap();
-  display.enableTimer();
 }
 
 void drawColorBars() {

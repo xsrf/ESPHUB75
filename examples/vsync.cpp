@@ -9,7 +9,7 @@ ESPHUB75 display(WIDTH, HEIGHT, ESPHUB75_SCAN_16, ESPHUB75_COLOR_RGB, ESPHUB75_L
 
 
 void setup() {
-  display.begin(3,false); // ( ColorDepth in Bits per primary color, use DoubleBuffering )
+  display.begin(3,false,false); // ( ColorDepth in Bits per primary color, use DoubleBuffering )
 }
 
 // Select your preferred loop() at the bottom!
