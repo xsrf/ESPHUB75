@@ -1,7 +1,6 @@
 #pragma once
 
 /*
-    https://github.com/xsrf/ESP8266Matrix
 
     This Library is designed to drive Shift-Register based multiplexing
     LED Matrix panles with as little CPU load as possible by using
@@ -105,10 +104,10 @@
     #define _GPOC(val) GPOC = val; GP16O &= ~((val >> 16) & 1)
 #endif
 
-class ESP8266Matrix : public Adafruit_GFX {
+class ESPHUB75 : public Adafruit_GFX {
     public:
         uint16_t getPixel(int16_t x, int16_t y);
-        ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
+        ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
         void begin(uint8_t colorDepth, bool doubleBuffer);
         void loop();
         void drawPixel(int16_t x, int16_t y, uint16_t color);
@@ -171,7 +170,7 @@ class ESP8266Matrix : public Adafruit_GFX {
         void strobe(uint16_t length_us);
 };
 
-ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
+ESPHUB75::ESPHUB75(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A = 0xFF, uint8_t B = 0xFF, uint8_t C = 0xFF, uint8_t D = 0xFF, uint8_t E = 0xFF) : Adafruit_GFX(panelWidth,panelHeight) {
     // Here we set all electrical/physical definitions, since these values should never change:
     // panelWidth = How many LEDs/Pixels does a row (where LEDs are lit at once during multiplexing) have?
     // panelHeight = How many rows does the panel have?
@@ -206,7 +205,7 @@ ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t 
     if(_colorChannels > 4) _colorChannels = 3; // RGBW/RGBY might exist, but if higher we assume the user did something wrong...
 }
 
-void ESP8266Matrix::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
+void ESPHUB75::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
     // Here we set all values we need to construct the framebuffer(s) and create it
     // colorDepth : Bits of colorDepth per primary color! 3 results in 8 shades per primary color, thus 512 colors. Max is 5!
     if(!_constructed) return;
@@ -252,7 +251,7 @@ void ESP8266Matrix::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
     setLEDPulseDuration(40,0);
 }
 
-void ESP8266Matrix::drawPixel(int16_t x, int16_t y, uint16_t color) {
+void ESPHUB75::drawPixel(int16_t x, int16_t y, uint16_t color) {
     if(!_initialized) return;
     uint16_t _x = x;
     uint16_t _y = y;
@@ -286,11 +285,11 @@ void ESP8266Matrix::drawPixel(int16_t x, int16_t y, uint16_t color) {
     }
 }
 
-void ESP8266Matrix::drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b) {
+void ESPHUB75::drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b) {
     drawPixel(x,y,color565(r,g,b));
 }
 
-uint16_t ESP8266Matrix::color565(uint8_t r, uint8_t g, uint8_t b) {
+uint16_t ESPHUB75::color565(uint8_t r, uint8_t g, uint8_t b) {
     uint16_t col16 = 0;
     col16 |= (r>>3)<<11;
     col16 |= (g>>2)<<5;
@@ -298,7 +297,7 @@ uint16_t ESP8266Matrix::color565(uint8_t r, uint8_t g, uint8_t b) {
     return col16;
 }
 
-void ESP8266Matrix::initBuffer() {
+void ESPHUB75::initBuffer() {
     // Put arrows in each corner and label Buffers A/B
     // You can remove this stuff using clear()
     // This helps if someone fails to use doubleBuffering
@@ -326,28 +325,28 @@ void ESP8266Matrix::initBuffer() {
     print("A");
 }
 
-void ESP8266Matrix::clear() {
+void ESPHUB75::clear() {
     if(!_initialized) return;
     memset(_frameBufferDraw,0,_fbs_memory);
 }
 
-void ESP8266Matrix::clearDisplay() {
+void ESPHUB75::clearDisplay() {
     clear();
 }
 
-void ESP8266Matrix::requestBufferSwap() {
+void ESPHUB75::requestBufferSwap() {
     // Will request a BufferSwap which will happen on next vsync
     if(!_doubleBuffer) return;
     _requestBufferSwap = true;
 }
 
 
-bool ESP8266Matrix::readyForDrawing() {
+bool ESPHUB75::readyForDrawing() {
     if(_doubleBuffer) return !_requestBufferSwap;
     return _VSyncReady;
 }
 
-inline void ESP8266Matrix::setLatch(bool on) {
+inline void ESPHUB75::setLatch(bool on) {
     if(on) {
         _GPOS(_gpio_latch);
     } else {
@@ -355,14 +354,14 @@ inline void ESP8266Matrix::setLatch(bool on) {
     }
 }
 
-inline void ESP8266Matrix::selectMux(uint8_t row) {
+inline void ESPHUB75::selectMux(uint8_t row) {
     // clear all mux pins
     _GPOC(_gpio_mux_mask);
     // set mux pins
     _GPOS(_gpio_mux[row]);
 }
 
-inline bool ESP8266Matrix::isBusy() {
+inline bool ESPHUB75::isBusy() {
     if(nbSPI_isBusy()) return true; // SPI still sending
     #ifdef ESP8266
         if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
@@ -373,7 +372,7 @@ inline bool ESP8266Matrix::isBusy() {
     return false;
 }
 
-inline bool ESP8266Matrix::readyForFPS(uint8_t fps) {
+inline bool ESPHUB75::readyForFPS(uint8_t fps) {
     // Wait for this to be true if you want to draw with a constant fps
     if(!readyForDrawing()) return false;
     if((micros() - _lastFPSExecuted) > (1e6/fps) ) {
@@ -383,19 +382,19 @@ inline bool ESP8266Matrix::readyForFPS(uint8_t fps) {
     return false;
 }
 
-void ESP8266Matrix::setBusyModeBlock() {
+void ESPHUB75::setBusyModeBlock() {
     // If you call loop() again before SPI transfer is done / LED Pulse finished,
     // this mode will block loop() until it can run safely
     _blockIfBusy = true;
 }
 
-void ESP8266Matrix::setBusyModeSkip() {
+void ESPHUB75::setBusyModeSkip() {
     // If you call loop() again before SPI transfer is done / LED Pulse finished,
     // this mode will skip loop() and return until it can run safely again
     _blockIfBusy = false;
 }
 
-inline void ESP8266Matrix::copyBuffer(bool reverse = false) {
+inline void ESPHUB75::copyBuffer(bool reverse = false) {
     // This will copy the display buffer to the drawing buffer immediately (or inverse)
     // Use this in your application before drawing, if you rely on the display buffer
     // to stay the same after every frame
@@ -408,7 +407,7 @@ inline void ESP8266Matrix::copyBuffer(bool reverse = false) {
     }
 }
 
-void ESP8266Matrix::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
+void ESPHUB75::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
     // This will set the On-Time for the LEDs for the MSB and half it
     // for all less significant bits if using colorDepth.
     // You can set the length for each bit individually if you call
@@ -423,7 +422,7 @@ void ESP8266Matrix::setLEDPulseDuration(uint8_t onTime, uint8_t bit = 0) {
     }
 }
 
-ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
+ICACHE_RAM_ATTR void ESPHUB75::loop() {
     static uint8_t lineIdx = 0;
     static uint8_t _colorDepthIdx = 0;
     static uint8_t line = 0;
@@ -473,7 +472,7 @@ ICACHE_RAM_ATTR void ESP8266Matrix::loop() {
 
 }
 
-void ESP8266Matrix::_initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data) {
+void ESPHUB75::_initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data) {
     #ifdef ESP32
         nbSPI_init(freq, mode, pin_clk, pin_data);
     #endif
@@ -485,7 +484,7 @@ void ESP8266Matrix::_initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8
     #endif
 }
 
-void ESP8266Matrix::_initStrobe(uint8_t pin_oe) {
+void ESPHUB75::_initStrobe(uint8_t pin_oe) {
     #ifdef ESP32
         DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_UART1_CLK_EN); // Enable UART1 Clock
         DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_UART1_RST); // Enable UART1 Hardware
@@ -500,7 +499,7 @@ void ESP8266Matrix::_initStrobe(uint8_t pin_oe) {
     #endif 
 }
 
-inline void ESP8266Matrix::strobe(uint16_t length_us) {
+inline void ESPHUB75::strobe(uint16_t length_us) {
     #ifdef ESP32
         WRITE_PERI_REG(UART_CLKDIV_REG(1), 10*length_us);
         WRITE_PERI_REG(UART_FIFO_REG(1), 0x80);

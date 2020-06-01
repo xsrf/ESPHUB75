@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <ESP8266Matrix.h>
+#include <ESPHUB75.h>
 
 #define P_LAT  16 // D0
 #define P_A     5 // D1
@@ -12,7 +12,7 @@
 #define P_DATA 13 // D7 (Documentation only, this Pin is hardwired and cannot be changed!)
 
 // Init Display: Width, Height, RowsPerMux, PrimaryColors, Pin Latch, Pins A-E
-ESP8266Matrix display(64,32,2,3,P_LAT,P_A,P_B,P_C,P_D);
+ESPHUB75 display(64,32,2,3,P_LAT,P_A,P_B,P_C,P_D);
 
 void setup() {
   display.begin(3,false); // ( ColorDepth in Bits per primary color, use DoubleBuffering )
