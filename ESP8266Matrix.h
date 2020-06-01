@@ -109,30 +109,30 @@ class ESP8266Matrix : public Adafruit_GFX {
     public:
         uint16_t getPixel(int16_t x, int16_t y);
         ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t rowsPerMux, uint8_t colorChannels, uint8_t LATCH, uint8_t A, uint8_t B, uint8_t C, uint8_t D, uint8_t E);
-        void begin(uint8_t colorDepth, boolean doubleBuffer);
+        void begin(uint8_t colorDepth, bool doubleBuffer);
         void loop();
         void drawPixel(int16_t x, int16_t y, uint16_t color);
         void requestBufferSwap();
         void requestVSync();
-        boolean readyForDrawing();
+        bool readyForDrawing();
         void setBusyModeBlock();
         void setBusyModeSkip();
-        void copyBuffer(boolean reverse);
+        void copyBuffer(bool reverse);
         void initBuffer();
         void clear();
         void clearDisplay();
-        boolean isBusy();
-        boolean readyForFPS(uint8_t fps);
+        bool isBusy();
+        bool readyForFPS(uint8_t fps);
         void setLEDPulseDuration(uint8_t onTime, uint8_t bit);
         uint16_t color565(uint8_t r, uint8_t g, uint8_t b);
         void drawPixelRGB888(uint16_t x, uint16_t y, uint8_t r, uint8_t g, uint8_t b);
     private:
-        boolean _doubleBuffer = false;
-        boolean _initialized = false;
-        boolean _constructed = false;
-        boolean _blockIfBusy = false;
-        volatile boolean _requestBufferSwap = false;
-        volatile boolean _VSyncReady = false;
+        bool _doubleBuffer = false;
+        bool _initialized = false;
+        bool _constructed = false;
+        bool _blockIfBusy = false;
+        volatile bool _requestBufferSwap = false;
+        volatile bool _VSyncReady = false;
         uint8_t _rowsPerMux; // How many physical rows are lit for one mux setting?
         uint16_t _width; // Physical with of Panel in Pixels
         uint16_t _height; // Physical height of Panel in Pixels
@@ -165,7 +165,7 @@ class ESP8266Matrix : public Adafruit_GFX {
         uint32_t _spi_freq = 20e6;
         volatile uint32_t _lastFPSExecuted = 0;
         void selectMux(uint8_t row);
-        void setLatch(boolean on);
+        void setLatch(bool on);
         void _initSPI(uint32_t freq, uint8_t mode, uint8_t pin_clk, uint8_t pin_data);
         void _initStrobe(uint8_t pin_oe);
         void strobe(uint16_t length_us);
@@ -206,7 +206,7 @@ ESP8266Matrix::ESP8266Matrix(uint16_t panelWidth, uint16_t panelHeight, uint8_t 
     if(_colorChannels > 4) _colorChannels = 3; // RGBW/RGBY might exist, but if higher we assume the user did something wrong...
 }
 
-void ESP8266Matrix::begin(uint8_t colorDepth = 3, boolean doubleBuffer = false) {
+void ESP8266Matrix::begin(uint8_t colorDepth = 3, bool doubleBuffer = false) {
     // Here we set all values we need to construct the framebuffer(s) and create it
     // colorDepth : Bits of colorDepth per primary color! 3 results in 8 shades per primary color, thus 512 colors. Max is 5!
     if(!_constructed) return;
@@ -342,12 +342,12 @@ void ESP8266Matrix::requestBufferSwap() {
 }
 
 
-boolean ESP8266Matrix::readyForDrawing() {
+bool ESP8266Matrix::readyForDrawing() {
     if(_doubleBuffer) return !_requestBufferSwap;
     return _VSyncReady;
 }
 
-inline void ESP8266Matrix::setLatch(boolean on) {
+inline void ESP8266Matrix::setLatch(bool on) {
     if(on) {
         _GPOS(_gpio_latch);
     } else {
@@ -362,7 +362,7 @@ inline void ESP8266Matrix::selectMux(uint8_t row) {
     _GPOS(_gpio_mux[row]);
 }
 
-inline boolean ESP8266Matrix::isBusy() {
+inline bool ESP8266Matrix::isBusy() {
     if(nbSPI_isBusy()) return true; // SPI still sending
     #ifdef ESP8266
         if(!(U1S & (1<<USRXD))) return true; // UART1 TX still low / LEDs on
@@ -373,7 +373,7 @@ inline boolean ESP8266Matrix::isBusy() {
     return false;
 }
 
-inline boolean ESP8266Matrix::readyForFPS(uint8_t fps) {
+inline bool ESP8266Matrix::readyForFPS(uint8_t fps) {
     // Wait for this to be true if you want to draw with a constant fps
     if(!readyForDrawing()) return false;
     if((micros() - _lastFPSExecuted) > (1e6/fps) ) {
@@ -395,7 +395,7 @@ void ESP8266Matrix::setBusyModeSkip() {
     _blockIfBusy = false;
 }
 
-inline void ESP8266Matrix::copyBuffer(boolean reverse = false) {
+inline void ESP8266Matrix::copyBuffer(bool reverse = false) {
     // This will copy the display buffer to the drawing buffer immediately (or inverse)
     // Use this in your application before drawing, if you rely on the display buffer
     // to stay the same after every frame
